@@ -44,7 +44,7 @@ func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysql
 var _ interfaces.StudentServiceInterface = (*StudentService)(nil)
 
 // StudentNotFoundErr 判断错误是不是没有找到学生之类的错误 如果是那就继续去下一个数据源找 不返回
-func (ss *StudentService) StudentNotFoundErr(studentId string, err error) bool {
+func (ss *StudentService) StudentNotFoundErr(err error) bool {
 	studentNotFoundErrMsg := fmt.Sprintf("不存在学生")
 	return strings.Contains(err.Error(), studentNotFoundErrMsg)
 }
@@ -212,7 +212,7 @@ func (ss *StudentService) GetStudent(id string) (*model.Student, error) {
 		ss.MysqlService.AddStudentCount(id)
 		log.Printf("从缓存中查找到了学生：%s", id)
 		//如果确定内存里没有这个学生 就向内存中添加学生
-		if ss.StudentNotFoundErr(id, memoryErr) {
+		if ss.StudentNotFoundErr(memoryErr) {
 			ss.MdbService.AddStudent(student)
 			log.Printf("从缓存向内存中添加学生：%s", id)
 		}
@@ -229,11 +229,11 @@ func (ss *StudentService) GetStudent(id string) (*model.Student, error) {
 		ss.MysqlService.AddStudentCount(id)
 		log.Printf("在数据库中查找到了学生：%s", id)
 		//如果确定内存和缓存没有学生 就向内存和缓存中添加学生
-		if ss.StudentNotFoundErr(id, memoryErr) {
+		if ss.StudentNotFoundErr(memoryErr) {
 			ss.MdbService.AddStudent(student)
 			log.Printf("从数据库向内存中添加学生：%s", id)
 		}
-		if ss.StudentNotFoundErr(id, cacheErr) {
+		if ss.StudentNotFoundErr(cacheErr) {
 			err := ss.CacheService.AddStudent(student)
 			if err != nil {
 				log.Printf("从数据库向缓存中添加学生：%s失败：%v", id, err)
@@ -268,14 +268,14 @@ func (ss *StudentService) UpdateStudentInternal(student *model.Student) error {
 	}
 	// MySQL 数据库事务提交成功后，尝试更新缓存和内存 还要确保数据一致性
 	if err := ss.CacheService.UpdateStudent(student); err != nil {
-		if !ss.StudentNotFoundErr(student.ID, err) {
+		if !ss.StudentNotFoundErr(err) {
 			tx.Rollback()
 			log.Printf("更新缓存失败 回滚事务")
 			return fmt.Errorf("StudentService.UpdateStudentInternal 更新缓存中的学生：%s时失败：%w", student.ID, err)
 		}
 	}
 	if err := ss.MdbService.UpdateStudent(student); err != nil {
-		if !ss.StudentNotFoundErr(student.ID, err) {
+		if !ss.StudentNotFoundErr(err) {
 			tx.Rollback()
 			if err = ss.RestoreCacheData(student.ID); err != nil {
 				return fmt.Errorf("StudentService.UpdateStudentInternal 更新内存中的学生失败后 尝试恢复缓存数据时失败：%w", err)
@@ -307,7 +307,7 @@ func (ss *StudentService) DeleteStudentInternal(id string) error {
 		}
 	}()
 	if err := ss.CacheService.DeleteStudent(id); err != nil {
-		if !ss.StudentNotFoundErr(id, err) {
+		if !ss.StudentNotFoundErr(err) {
 			tx.Rollback()
 			log.Printf("删除缓存数据失败 回滚事务")
 			return fmt.Errorf("StudentService.DeleteStudentInternal 从缓存中删除学生：%s失败：%w", id, err)
@@ -315,7 +315,7 @@ func (ss *StudentService) DeleteStudentInternal(id string) error {
 	}
 
 	if err := ss.MdbService.DeleteStudent(id); err != nil {
-		if !ss.StudentNotFoundErr(id, err) {
+		if !ss.StudentNotFoundErr(err) {
 			tx.Rollback()
 			log.Printf("从内存中删除学生：%s失败：%v", id, err)
 			if err = ss.RestoreCacheData(id); err != nil {
