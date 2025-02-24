@@ -305,14 +305,15 @@ func (ss *StudentService) UpdateStudentInternal(student *model.Student) error {
 		}
 	}
 	if err := ss.MdbService.UpdateStudent(student); err != nil {
-		if !ss.StudentNotFoundErr(err) {
+		if !ss.StudentNotFoundErr(err) && !strings.Contains(err.Error(), "过期") {
 			tx.Rollback()
 			if err = ss.RestoreCacheData(student.ID); err != nil {
 				return fmt.Errorf("StudentService.UpdateStudentInternal 更新内存中的学生失败后 尝试恢复缓存数据时失败：%w", err)
 			}
+			log.Printf("回滚数据库事务并恢复缓存")
 			return fmt.Errorf("StudentService.UpdateStudentInternal 更新内存中的学生：%s失败：%w", student.ID, err)
+
 		}
-		log.Printf("回滚数据库事务并恢复缓存")
 	}
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("StudentService.UpdateStudentInternal 回滚事务失败：%w", err)
