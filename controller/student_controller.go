@@ -76,7 +76,7 @@ func (sc *StudentController) UpdateStudent(c *gin.Context) {
 	} else {
 		// 记录日志
 		log.Printf("修改学生：%s", student.ID)
-		c.JSON(http.StatusOK, response.Success(nil))
+		c.JSON(http.StatusOK, response.SuccessWithoutData())
 	}
 }
 
@@ -92,6 +92,19 @@ func (sc *StudentController) DeleteStudent(c *gin.Context) {
 	} else {
 		// 记录日志
 		log.Printf("删除学号为：%s的学生", studentId)
-		c.JSON(http.StatusOK, response.Success(nil))
+		c.JSON(http.StatusOK, response.SuccessWithoutData())
+	}
+}
+
+// JoinRaftCluster 向领导者节点发送请求 把自身加入到集群中
+func (sc *StudentController) JoinRaftCluster(c *gin.Context) {
+	nodeID := c.Query("nodeID")
+	nodeAddress := c.Query("nodeAddress")
+	if err := sc.studentService.JoinRaftCluster(nodeID, nodeAddress); err != nil {
+		log.Printf("StudentController.JoinRaftCluster err:%v", err)
+		c.JSON(500, response.Error(err.Error()))
+	} else {
+		log.Printf("添加节点：%s成功", nodeID)
+		c.JSON(http.StatusOK, response.SuccessWithoutData())
 	}
 }

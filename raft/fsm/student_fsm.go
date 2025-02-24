@@ -9,7 +9,7 @@ import (
 	"memoryDataBase/model"
 )
 
-// StudentCommand 定义 Raft 日志条目的结构
+// StudentCommand 定义 Node 日志条目的结构
 type StudentCommand struct {
 	Operation   string         `json:"operation"`
 	Student     *model.Student `json:"student,omitempty"`

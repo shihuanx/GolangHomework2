@@ -5,6 +5,7 @@ import (
 	"fmt"
 	raftfpk "github.com/hashicorp/raft"
 	"log"
+	"memoryDataBase/config"
 	"memoryDataBase/interfaces"
 	"memoryDataBase/model"
 	"memoryDataBase/raft"
@@ -18,24 +19,33 @@ type StudentService struct {
 	MdbService   *StudentMdbService
 	MysqlService *StudentMysqlService
 	CacheService *StudentCacheService
-	raftNode     *raftfpk.Raft
+	raftNodes    map[string]*raftfpk.Raft
 }
 
-// NewStudentService 创建一个新的 StudentService 实例
-func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysqlService, cacheService *StudentCacheService, localID string) (*StudentService, error) {
+// NewStudentService 创建并初始化 StudentService 实例
+func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysqlService, cacheService *StudentCacheService, node config.SingleNode, cfg config.Config, nodeIndex int) (*StudentService, error) {
 	ss := &StudentService{
 		MdbService:   mdbService,
 		MysqlService: mysqlService,
 		CacheService: cacheService,
+		raftNodes:    make(map[string]*raftfpk.Raft),
 	}
 
-	// 初始化 Raft 节点
 	initializer := &raft.RaftInitializerImpl{}
-	raftNode, err := initializer.InitRaft(localID, ss)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Raft node: %w", err)
+
+	// 构建 peers 列表
+	peers := make([]string, 0)
+	for peerIndex, peer := range cfg.Node.Nodes {
+		if peerIndex < nodeIndex {
+			peers = append(peers, peer.Address)
+		}
 	}
-	ss.raftNode = raftNode
+
+	raftNode, err := initializer.InitRaft(node.NodeId, node.Address, peers, ss)
+	if err != nil {
+		return nil, fmt.Errorf("初始化 Raft 节点 %s 时出错: %w", node.NodeId, err)
+	}
+	ss.raftNodes[node.NodeId] = raftNode
 
 	return ss, nil
 }
@@ -49,8 +59,22 @@ func (ss *StudentService) StudentNotFoundErr(err error) bool {
 	return strings.Contains(err.Error(), studentNotFoundErrMsg)
 }
 
-func (ss *StudentService) applyRaftCommand(operation string, student *model.Student, id string, examineSize int) error {
-	// 创建 Raft 命令
+func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
+	for _, raftNode := range ss.raftNodes {
+		if raftNode.State() == raftfpk.Leader {
+			future := raftNode.AddVoter(raftfpk.ServerID(nodeID), raftfpk.ServerAddress(nodeAddress), 0, 0)
+			if err := future.Error(); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("没有领导者节点")
+}
+
+// ApplyRaftCommandToLeader 将命令提交给领导者
+func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *model.Student, id string, examineSize int) error {
+	// 创建 Node 命令
 	cmd := fsm.StudentCommand{
 		Operation:   operation,
 		Student:     student,
@@ -60,19 +84,26 @@ func (ss *StudentService) applyRaftCommand(operation string, student *model.Stud
 	// 序列化命令
 	cmdData, err := json.Marshal(cmd)
 	if err != nil {
-		return fmt.Errorf("applyRaftCommand Marshal err: %w", err)
+		return fmt.Errorf("ApplyRaftCommandToLeader Marshal err: %w", err)
 	}
-	// 提交命令到 Raft 节点
-	future := ss.raftNode.Apply(cmdData, 500)
-	if err = future.Error(); err != nil {
-		return fmt.Errorf("applyRaftCommand failed to apply add student command to Raft: %w", err)
+
+	//找到领导者节点
+	for nodeID, raftNode := range ss.raftNodes {
+		if raftNode.State() == raftfpk.Leader {
+			// 提交命令到领导者 Node 节点
+			future := raftNode.Apply(cmdData, 500)
+			if err = future.Error(); err != nil {
+				return fmt.Errorf("ApplyRaftCommandToLeader failed to apply command to leader Node %s: %w", nodeID, err)
+			}
+			// 处理响应
+			result := future.Response()
+			if resultErr, ok := result.(error); ok {
+				return resultErr
+			}
+			return nil
+		}
 	}
-	// 处理响应
-	result := future.Response()
-	if resultErr, ok := result.(error); ok {
-		return resultErr
-	}
-	return nil
+	return fmt.Errorf("未找到领导者节点")
 }
 
 // RestoreCacheData 恢复缓存机制 mysql有事务可以很方便地回滚 此函数专门用于恢复缓存的数据
@@ -344,7 +375,7 @@ func (ss *StudentService) ReLoadCacheData(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			err := ss.applyRaftCommand("reloadCacheData", nil, "", 0)
+			err := ss.ApplyRaftCommandToLeader("reloadCacheData", nil, "", 0)
 			if err != nil {
 				log.Printf("StudentService.ReLoadCacheData 分布式加载缓存数据失败: %v，跳过这次操作：%v", err, time.Now())
 				continue
@@ -361,7 +392,7 @@ func (ss *StudentService) PeriodicDelete(interval time.Duration, examineSize int
 	for {
 		select {
 		case <-ticker.C:
-			err := ss.applyRaftCommand("periodicDelete", nil, "", examineSize)
+			err := ss.ApplyRaftCommandToLeader("periodicDelete", nil, "", examineSize)
 			if err != nil {
 				log.Printf("StudentService.PeriodicDelete 分布式删除内存数据库过期键失败：: %v，跳过这次操作：%v", err, time.Now())
 				continue
@@ -372,15 +403,15 @@ func (ss *StudentService) PeriodicDelete(interval time.Duration, examineSize int
 
 // AddStudent 接收添加学生命令 提交给Raft节点
 func (ss *StudentService) AddStudent(student *model.Student) error {
-	return ss.applyRaftCommand("add", student, "", 0)
+	return ss.ApplyRaftCommandToLeader("add", student, "", 0)
 }
 
 // UpdateStudent 接收更新学生命令 提交给Raft节点
 func (ss *StudentService) UpdateStudent(student *model.Student) error {
-	return ss.applyRaftCommand("update", student, "", 0)
+	return ss.ApplyRaftCommandToLeader("update", student, "", 0)
 }
 
 // DeleteStudent 接收删除学生命令 提交给Raft节点
 func (ss *StudentService) DeleteStudent(id string) error {
-	return ss.applyRaftCommand("delete", nil, id, 0)
+	return ss.ApplyRaftCommandToLeader("delete", nil, id, 0)
 }

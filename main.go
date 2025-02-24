@@ -9,15 +9,13 @@ import (
 	"memoryDataBase/database"
 	"memoryDataBase/routers"
 	"memoryDataBase/service"
+	"sync"
 )
 
-func main() {
-	//加载配置信息
-	cfg := config.GetConfig()
-
+func startNode(node config.SingleNode, cfg config.Config, index int) {
 	// 初始化数据库和缓存
 	if err := database.InitDB(cfg.MySQL.DSN); err != nil {
-		log.Fatalf("初始化数据库失败: %v", err)
+		log.Fatalf("节点 %s 初始化数据库失败: %v", node.NodeId, err)
 	}
 	cache.InitRedis(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 
@@ -30,9 +28,9 @@ func main() {
 	studentCacheService := service.NewStudentCacheService(studentCacheDao)
 	studentMysqlService := service.NewStudentMysqlService(studentMysqlDao)
 	studentMdbService := service.NewStudentMdbService(memoryDBDao)
-	studentService, err := service.NewStudentService(studentMdbService, studentMysqlService, studentCacheService, cfg.Raft.LocalID)
+	studentService, err := service.NewStudentService(studentMdbService, studentMysqlService, studentCacheService, node, cfg, index)
 	if err != nil {
-		log.Fatalf("初始化学生服务层失败：%v", err)
+		log.Fatalf("节点 %s 初始化学生服务层失败：%v", node.NodeId, err)
 	}
 
 	// 初始化控制器
@@ -40,9 +38,9 @@ func main() {
 
 	//启动时加载缓存数据到内存
 	if err = studentService.LoadCacheToMemory(cfg.MemoryDB.Capacity, cfg.CachePreheating.LoadRatio); err != nil {
-		log.Printf("加载缓存到内存时失败：%v", err)
+		log.Printf("节点 %s 加载缓存到内存时失败：%v", node.NodeId, err)
 		if err = studentService.LoadDateBaseToMemory(cfg.MemoryDB.Capacity, cfg.CachePreheating.LoadRatio); err != nil {
-			log.Printf("加载数据库中的数据到内存时失败：%v", err)
+			log.Printf("节点 %s 加载数据库中的数据到内存时失败：%v", node.NodeId, err)
 		}
 	}
 
@@ -57,8 +55,25 @@ func main() {
 	}()
 
 	//初始化路由
-	r := routers.SetUpStudentRouter(studentController)
-	if err = r.Run(cfg.Server.Address); err != nil {
-		log.Fatalf("初始化Gin框架时出错：%v", err)
+	studentRouter := routers.SetUpStudentRouter(studentController)
+	serverAddress := ":" + node.PortAddress
+	if err = studentRouter.Run(serverAddress); err != nil {
+		log.Fatalf("节点 %s 初始化学生路由时出错：%v", node.NodeId, err)
 	}
+}
+
+func main() {
+	//加载配置信息
+	cfg := config.GetConfig()
+
+	var wg sync.WaitGroup
+	for index, node := range cfg.Node.Nodes {
+		wg.Add(1)
+		go func(n config.SingleNode) {
+			defer wg.Done()
+			startNode(n, cfg, index)
+		}(node)
+	}
+
+	wg.Wait()
 }

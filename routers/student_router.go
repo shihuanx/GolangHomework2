@@ -15,6 +15,8 @@ func SetUpStudentRouter(studentController *controller.StudentController) *gin.En
 	studentGroup.PUT("", studentController.UpdateStudent)
 	studentGroup.DELETE("/:id", studentController.DeleteStudent)
 
+	r.GET("/JoinRaftCluster", studentController.JoinRaftCluster)
+
 	return r
 
 }
