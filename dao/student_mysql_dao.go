@@ -6,7 +6,7 @@ import (
 	"memoryDataBase/model"
 )
 
-// StudentMysqlDao 定义mysql层结构体实例
+// StudentMysqlDao 定义MysqlDao层结构体实例
 type StudentMysqlDao struct {
 	DB *gorm.DB
 }

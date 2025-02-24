@@ -61,6 +61,5 @@ func (fsm *StudentFSM) Snapshot() (raft.FSMSnapshot, error) {
 // Restore 恢复状态机到快照状态
 func (fsm *StudentFSM) Restore(snapshot io.ReadCloser) error {
 	defer snapshot.Close()
-	fmt.Printf("Restoring snapshot data\n")
 	return nil
 }

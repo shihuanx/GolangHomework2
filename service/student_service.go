@@ -59,6 +59,7 @@ func (ss *StudentService) StudentNotFoundErr(err error) bool {
 	return strings.Contains(err.Error(), studentNotFoundErrMsg)
 }
 
+// JoinRaftCluster 将节点加入 Raft 集群
 func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
 	for _, raftNode := range ss.raftNodes {
 		if raftNode.State() == raftfpk.Leader {
@@ -158,7 +159,6 @@ func (ss *StudentService) LoadCacheToMemory(capacity int, addRadio float64) erro
 			return nil
 		}
 	}
-	log.Printf("从缓存加载到内存")
 	return nil
 }
 
@@ -180,7 +180,6 @@ func (ss *StudentService) LoadDateBaseToMemory(capacity int, addRadio float64) e
 			return nil
 		}
 	}
-	log.Printf("从数据库加载到内存")
 	return nil
 }
 

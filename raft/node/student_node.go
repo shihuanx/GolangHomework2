@@ -42,11 +42,10 @@ func NewRaftNode(nodeID string, address string, peers []string, fsm raft.FSM) (*
 		return nil, fmt.Errorf("创建快照存储失败: NodeID=%s, Error=%w", nodeID, err)
 	}
 
-	// 初始化传输层
+	// 初始化传输层 通过TCP传输
 	transport, err := raft.NewTCPTransport(address, nil, 3, 10*time.Second, os.Stderr)
 	if err != nil {
 		log.Printf("创建 Raft 传输层失败: NodeID=%s Address=%s Error=%v", nodeID, address, err)
-		// 可以根据具体情况进行错误处理，例如退出程序或者进行重试
 		return nil, err
 	}
 	if transport == nil {
@@ -58,7 +57,7 @@ func NewRaftNode(nodeID string, address string, peers []string, fsm raft.FSM) (*
 	// 创建 Raft 实例
 	r, err := raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, transport)
 	if err != nil {
-		return nil, fmt.Errorf("创建 Raft 实例失败: NodeID=%s, Error=%w", nodeID, err)
+		return nil, fmt.Errorf("创建 Raft 实例失败: NodeID：%s, Error：%w", nodeID, err)
 	}
 
 	// 如果是第一个节点，初始化集群

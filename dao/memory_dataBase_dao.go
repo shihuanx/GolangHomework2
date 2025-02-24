@@ -10,7 +10,7 @@ import (
 
 var Expiration = time.Hour
 
-// MemoryDBDao 内存数据库 DAO 结构体
+// MemoryDBDao 定义内存数据库结构体
 type MemoryDBDao struct {
 	dataMap    map[string]interface{}
 	expires    map[string]time.Time
@@ -21,7 +21,7 @@ type MemoryDBDao struct {
 	evictRatio float64                  // 淘汰比例
 }
 
-// NewMemoryDBDao 创建一个新的内存数据库实例
+// NewMemoryDBDao 初始化内存数据库实例
 func NewMemoryDBDao(capacity int, evictRatio float64) *MemoryDBDao {
 	mdb := &MemoryDBDao{
 		dataMap:    make(map[string]interface{}),
