@@ -17,18 +17,6 @@
 
 添加学生：POST localhost:8080/student 
 参数：json形式 id：string类型，name：string类型，class：string类型，gender：string类型 grades：map[string]float64 expiration:过期时间 默认是0 即永久保存 
-{
-    "id":"1",
-    "name":"wwww",
-    "class":"1",
-    "gender":"1",
-    "grades":{
-        "Math":91.1,
-        "English":20.4,
-        "Chinese":20
-    },
-    "expiration":10
-}
 
 修改学生: PUT localhost:8080/student
 参数：json形式 id：string类型 必填 其他的name，class，gender，grades选填 不填就不修改
