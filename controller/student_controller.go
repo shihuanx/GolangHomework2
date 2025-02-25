@@ -27,7 +27,7 @@ func (sc *StudentController) AddStudent(c *gin.Context) {
 		log.Printf("StudentController.AddStudent err：%v", err.Error())
 		c.JSON(http.StatusBadRequest, response.Error(err.Error()))
 		// 调用服务层方法添加学生信息
-	} else if err = sc.studentService.AddStudentInternal(&student); err != nil {
+	} else if err = sc.studentService.AddStudent(&student); err != nil {
 		log.Printf("StudentController.AddStudent err：%v", err.Error())
 		c.JSON(http.StatusBadRequest, response.Error(err.Error()))
 	} else {
@@ -60,7 +60,7 @@ func (sc *StudentController) UpdateStudent(c *gin.Context) {
 		return
 	}
 	// 调用服务层方法，更新学生信息
-	err := sc.studentService.UpdateStudentInternal(&student)
+	err := sc.studentService.UpdateStudent(&student)
 	if err != nil {
 		log.Printf(err.Error())
 		c.JSON(http.StatusNotFound, response.Error(err.Error()))
@@ -74,7 +74,7 @@ func (sc *StudentController) UpdateStudent(c *gin.Context) {
 func (sc *StudentController) DeleteStudent(c *gin.Context) {
 	studentId := c.Param("id")
 	// 调用服务层方法，删除学生信息
-	err := sc.studentService.DeleteStudentInternal(studentId)
+	err := sc.studentService.DeleteStudent(studentId)
 	if err != nil {
 		log.Printf("StudentController.DeleteStudent err：%v", err.Error())
 		c.JSON(http.StatusNotFound, response.Error(err.Error()))

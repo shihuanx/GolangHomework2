@@ -69,7 +69,7 @@ func (ss *StudentService) StudentNotFoundErr(err error) bool {
 
 // JoinRaftCluster 将节点加入 Raft 集群
 func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
-	//如果自己是领导者节点就处理
+	//如果自己是领导者节点就处理 无所谓 加入集群时领导者节点就是第一个节点
 	if ss.raftNode.State() == raftfpk.Leader {
 		future := ss.raftNode.AddVoter(raftfpk.ServerID(nodeID), raftfpk.ServerAddress(nodeAddress), 0, 0)
 		if err := future.Error(); err != nil {
@@ -81,6 +81,7 @@ func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) err
 	return nil
 }
 
+// HandleGetLeaderAddressRequest 处理获取领导者地址的请求 返回领导者的端口号
 func (ss *StudentService) HandleGetLeaderAddressRequest() string {
 	if ss.raftNode.State() == raftfpk.Leader {
 		log.Printf("节点：%s是领导者节点", ss.node.NodeId)
@@ -89,6 +90,7 @@ func (ss *StudentService) HandleGetLeaderAddressRequest() string {
 	return ""
 }
 
+// GetLeaderAddr 获取领导者地址 向所有节点都发送一个http请求 如果他是领导者节点 他就会把自己的端口号返回过来
 func (ss *StudentService) GetLeaderAddr() (string, error) {
 	for _, node := range ss.nodes {
 		url := fmt.Sprintf("http://localhost:%s/GetLeaderAddress", node.PortAddress)
@@ -120,7 +122,7 @@ func (ss *StudentService) GetLeaderAddr() (string, error) {
 	return "", fmt.Errorf("不可到达的代码")
 }
 
-// ApplyRaftCommandToLeader 将命令提交给领导者
+// ApplyRaftCommandToLeader 将命令提交给领导者处理
 func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *model.Student, id string, examineSize int) error {
 	// 创建 Node 命令
 	cmd := fsm.StudentCommand{
@@ -134,8 +136,7 @@ func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *mo
 	if err != nil {
 		return fmt.Errorf("ApplyRaftCommandToLeader Marshal err: %w", err)
 	}
-
-	//找到领导者节点
+	//如果自己是领导者节点 那就处理这个命令
 	if ss.raftNode.State() == raftfpk.Leader {
 		// 提交命令到领导者 Node 节点
 		future := ss.raftNode.Apply(cmdData, 500)
@@ -150,6 +151,7 @@ func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *mo
 		log.Printf("领导者节点已接收并提交命令到状态机")
 		return nil
 	} else {
+		//如果不是 那就找到领导者节点的端口 把命令交给领导者节点处理
 		leaderPortAddr, err := ss.GetLeaderAddr()
 		if err != nil {
 			return fmt.Errorf("StudentService.ApplyRaftCommandToLeader 获取领导者地址失败：%w", err)
@@ -164,6 +166,7 @@ func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *mo
 	}
 }
 
+// LeaderHandleCommand 领导者节点会处理命令 并发送到状态机
 func (ss *StudentService) LeaderHandleCommand(data string) error {
 	future := ss.raftNode.Apply([]byte(data), 500)
 	if err := future.Error(); err != nil {
