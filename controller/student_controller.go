@@ -96,3 +96,21 @@ func (sc *StudentController) JoinRaftCluster(c *gin.Context) {
 		c.JSON(http.StatusOK, response.SuccessWithoutData())
 	}
 }
+
+func (sc *StudentController) LeaderHandleCommand(c *gin.Context) {
+	cmdData := c.Query("cmd")
+	if err := sc.studentService.LeaderHandleCommand(cmdData); err != nil {
+		log.Printf("StudentController.LeaderHandleCommand err:%v", err)
+		c.JSON(500, response.Error(err.Error()))
+	} else {
+		log.Printf("领导者节点已处理命令")
+		c.JSON(http.StatusOK, response.SuccessWithoutData())
+	}
+}
+
+func (sc *StudentController) GetLeaderAddress(c *gin.Context) {
+	leaderAddr := sc.studentService.HandleGetLeaderAddressRequest()
+	if leaderAddr != "" {
+		c.JSON(200, response.Success(leaderAddr))
+	}
+}

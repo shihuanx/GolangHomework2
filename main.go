@@ -46,16 +46,18 @@ func startNode(node config.SingleNode, cfg config.Config, index int) {
 	}
 	log.Printf("节点：%s 加载缓存到内存", node.NodeId)
 
-	//定期清空缓存 加载mysql中访问记录多的数据
-	go func() {
-		studentService.ReLoadCacheData(cfg.Server.ReloadInterval)
-	}()
+	//定期清空缓存 定期清除内存中的过期键 随便取一个节点向领导者节点提交命令即可
+	//解释一下为什么不在每个协程都开启这两个协程：可能导致数据不同步 因为每个节点协程的开启时间不一样 所以这两个协程的计时开启时间也不一样
+	if node.NodeId == "节点2" {
+		go func() {
+			studentService.ReLoadCacheData(cfg.Server.ReloadInterval)
+		}()
 
-	//定期删除内存数据库过期键
-	go func() {
-		studentService.PeriodicDelete(cfg.Server.PeriodicDeleteInterval, cfg.Server.ExamineSize)
-	}()
-
+		//定期删除内存数据库过期键
+		go func() {
+			studentService.PeriodicDelete(cfg.Server.PeriodicDeleteInterval, cfg.Server.ExamineSize)
+		}()
+	}
 	//初始化路由
 	studentRouter := routers.SetUpStudentRouter(studentController)
 	serverAddress := ":" + node.PortAddress

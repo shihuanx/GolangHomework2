@@ -17,6 +17,10 @@ func SetUpStudentRouter(studentController *controller.StudentController) *gin.En
 
 	r.GET("/JoinRaftCluster", studentController.JoinRaftCluster)
 
+	r.GET("/LeaderHandleCommand", studentController.LeaderHandleCommand)
+
+	r.GET("/GetLeaderAddress", studentController.GetLeaderAddress)
+
 	return r
 
 }

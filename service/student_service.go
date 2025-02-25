@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	raftfpk "github.com/hashicorp/raft"
+	"io"
 	"log"
 	"memoryDataBase/config"
 	"memoryDataBase/interfaces"
 	"memoryDataBase/model"
 	"memoryDataBase/raft"
 	"memoryDataBase/raft/fsm"
+	"memoryDataBase/response"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -19,21 +22,27 @@ type StudentService struct {
 	MdbService   *StudentMdbService
 	MysqlService *StudentMysqlService
 	CacheService *StudentCacheService
-	raftNodes    map[string]*raftfpk.Raft
+	raftNode     *raftfpk.Raft
+	node         config.SingleNode
+	nodes        []config.SingleNode
 }
 
 // NewStudentService 创建并初始化 StudentService 实例
 func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysqlService, cacheService *StudentCacheService, node config.SingleNode, cfg config.Config, nodeIndex int) (*StudentService, error) {
+
 	ss := &StudentService{
 		MdbService:   mdbService,
 		MysqlService: mysqlService,
 		CacheService: cacheService,
-		raftNodes:    make(map[string]*raftfpk.Raft),
+		raftNode:     new(raftfpk.Raft),
+		node:         node,
+		nodes:        cfg.Node.Nodes,
 	}
 
 	initializer := &raft.RaftInitializerImpl{}
 
-	// 构建 peers 列表
+	// 构建 peers 列表 这里指定了项目刚启动的时候领导者节点肯定是下标最小的那个 这样其他节点申请加入集群时领导者节点的地址就确定了 省事
+	//但开启项目后后续领导者节点可能会变动 所以后续的一些需要领导者节点地址的操作就要动态获取了
 	peers := make([]string, 0)
 	for peerIndex, peer := range cfg.Node.Nodes {
 		if peerIndex < nodeIndex {
@@ -45,8 +54,7 @@ func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysql
 	if err != nil {
 		return nil, fmt.Errorf("初始化 Raft 节点 %s 时出错: %w", node.NodeId, err)
 	}
-	ss.raftNodes[node.NodeId] = raftNode
-
+	ss.raftNode = raftNode
 	return ss, nil
 }
 
@@ -61,16 +69,55 @@ func (ss *StudentService) StudentNotFoundErr(err error) bool {
 
 // JoinRaftCluster 将节点加入 Raft 集群
 func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
-	for _, raftNode := range ss.raftNodes {
-		if raftNode.State() == raftfpk.Leader {
-			future := raftNode.AddVoter(raftfpk.ServerID(nodeID), raftfpk.ServerAddress(nodeAddress), 0, 0)
-			if err := future.Error(); err != nil {
-				return err
-			}
-			return nil
+	//如果自己是领导者节点就处理
+	if ss.raftNode.State() == raftfpk.Leader {
+		future := ss.raftNode.AddVoter(raftfpk.ServerID(nodeID), raftfpk.ServerAddress(nodeAddress), 0, 0)
+		if err := future.Error(); err != nil {
+			return err
 		}
+		log.Printf("领导者节点已将节点：%s加入集群", nodeID)
+		return nil
 	}
-	return fmt.Errorf("没有领导者节点")
+	return nil
+}
+
+func (ss *StudentService) HandleGetLeaderAddressRequest() string {
+	if ss.raftNode.State() == raftfpk.Leader {
+		log.Printf("节点：%s是领导者节点", ss.node.NodeId)
+		return ss.node.PortAddress
+	}
+	return ""
+}
+
+func (ss *StudentService) GetLeaderAddr() (string, error) {
+	for _, node := range ss.nodes {
+		url := fmt.Sprintf("http://localhost:%s/GetLeaderAddress", node.PortAddress)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("请求出错：%v", err)
+			return "", err
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("读取响应体出错：%v", err)
+			return "", err
+		}
+		// 解析 JSON 响应
+		var result response.Result
+		err = json.Unmarshal(body, &result)
+		if err != nil {
+			fmt.Printf("解析 JSON 数据出错: %v\n", err)
+			return "", err
+		}
+
+		// 提取 leaderAddr
+		leaderPortAddr, ok := result.Data.(string)
+		if ok {
+			return leaderPortAddr, nil
+		}
+		return "", fmt.Errorf("领导者地址 类型断言失败")
+	}
+	return "", fmt.Errorf("不可到达的代码")
 }
 
 // ApplyRaftCommandToLeader 将命令提交给领导者
@@ -89,22 +136,46 @@ func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *mo
 	}
 
 	//找到领导者节点
-	for nodeID, raftNode := range ss.raftNodes {
-		if raftNode.State() == raftfpk.Leader {
-			// 提交命令到领导者 Node 节点
-			future := raftNode.Apply(cmdData, 500)
-			if err = future.Error(); err != nil {
-				return fmt.Errorf("ApplyRaftCommandToLeader failed to apply command to leader Node %s: %w", nodeID, err)
-			}
-			// 处理响应
-			result := future.Response()
-			if resultErr, ok := result.(error); ok {
-				return resultErr
-			}
-			return nil
+	if ss.raftNode.State() == raftfpk.Leader {
+		// 提交命令到领导者 Node 节点
+		future := ss.raftNode.Apply(cmdData, 500)
+		if err = future.Error(); err != nil {
+			return fmt.Errorf("ApplyRaftCommandToLeader 处理命令失败：%w", err)
 		}
+		// 处理响应
+		result := future.Response()
+		if resultErr, ok := result.(error); ok {
+			return resultErr
+		}
+		log.Printf("领导者节点已接收并提交命令到状态机")
+		return nil
+	} else {
+		leaderPortAddr, err := ss.GetLeaderAddr()
+		if err != nil {
+			return fmt.Errorf("StudentService.ApplyRaftCommandToLeader 获取领导者地址失败：%w", err)
+		}
+		url := fmt.Sprintf("http://localhost:%s/LeaderHandleCommand?cmd=%s", leaderPortAddr, cmdData)
+		_, err = http.Get(url)
+		if err != nil {
+			log.Printf("将cmd命令：%s发送给领导者失败：%v", cmdData, err)
+			return fmt.Errorf("将cmd命令：%s发送给领导者失败：%v", cmdData, err)
+		}
+		return nil
 	}
-	return fmt.Errorf("未找到领导者节点")
+}
+
+func (ss *StudentService) LeaderHandleCommand(data string) error {
+	future := ss.raftNode.Apply([]byte(data), 500)
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("ApplyRaftCommandToLeader 处理命令失败：%w", err)
+	}
+	// 处理响应
+	result := future.Response()
+	if resultErr, ok := result.(error); ok {
+		return resultErr
+	}
+	log.Printf("领导者节点已接收并提交命令到状态机")
+	return nil
 }
 
 // RestoreCacheData 恢复缓存机制 mysql有事务可以很方便地回滚 此函数专门用于恢复缓存的数据
@@ -273,8 +344,8 @@ func (ss *StudentService) GetStudent(id string) (*model.Student, error) {
 		}
 		return student, nil
 	}
-	//其实这是不可到达的代码 因为不存在既没有错误又没有学生的情况。。没有学生也是一个错误
-	return nil, nil
+	//不可到达的代码 因为不存在既没有错误又没有学生的情况 没有学生也是一个错误
+	return nil, fmt.Errorf("StudentService.GetStudent 错误到达的代码")
 }
 
 // UpdateStudentInternal 更新学生
@@ -377,7 +448,7 @@ func (ss *StudentService) ReLoadCacheData(interval time.Duration) {
 		case <-ticker.C:
 			err := ss.ApplyRaftCommandToLeader("reloadCacheData", nil, "", 0)
 			if err != nil {
-				log.Printf("StudentService.ReLoadCacheData 分布式加载缓存数据失败: %v，跳过这次操作：%v", err, time.Now())
+				log.Printf("StudentService.ReLoadCacheData 分布式加载缓存数据失败: %v，跳过这次操作", err)
 				continue
 			}
 		}
@@ -394,7 +465,7 @@ func (ss *StudentService) PeriodicDelete(interval time.Duration, examineSize int
 		case <-ticker.C:
 			err := ss.ApplyRaftCommandToLeader("periodicDelete", nil, "", examineSize)
 			if err != nil {
-				log.Printf("StudentService.PeriodicDelete 分布式删除内存数据库过期键失败：: %v，跳过这次操作：%v", err, time.Now())
+				log.Printf("StudentService.PeriodicDelete 分布式删除内存数据库过期键失败：: %v，跳过这次操作", err)
 				continue
 			}
 		}

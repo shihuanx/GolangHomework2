@@ -76,7 +76,7 @@ func GetConfig() Config {
 			PeriodicDeleteInterval time.Duration // 定期删除过期键的时间间隔
 			ExamineSize            int           // 定期删除过期键的检测数量
 		}{
-			ReloadInterval:         time.Hour,
+			ReloadInterval:         time.Minute,
 			PeriodicDeleteInterval: time.Hour,
 			ExamineSize:            10,
 		},
