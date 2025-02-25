@@ -97,6 +97,7 @@ func (sc *StudentController) JoinRaftCluster(c *gin.Context) {
 	}
 }
 
+// LeaderHandleCommand 在找到领导者的端口后会向领导者端口发送命令 这个接口会处理这些命令
 func (sc *StudentController) LeaderHandleCommand(c *gin.Context) {
 	cmdData := c.Query("cmd")
 	if err := sc.studentService.LeaderHandleCommand(cmdData); err != nil {
@@ -108,6 +109,7 @@ func (sc *StudentController) LeaderHandleCommand(c *gin.Context) {
 	}
 }
 
+// GetLeaderAddress 获取领导者端口的地址 方法是向所有节点都通过此端口发送请求 领导者端口会返回自己的端口地址
 func (sc *StudentController) GetLeaderAddress(c *gin.Context) {
 	leaderAddr := sc.studentService.HandleGetLeaderAddressRequest()
 	if leaderAddr != "" {
