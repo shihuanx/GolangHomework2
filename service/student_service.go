@@ -67,6 +67,18 @@ func (ss *StudentService) StudentNotFoundErr(err error) bool {
 	return strings.Contains(err.Error(), studentNotFoundErrMsg)
 }
 
+func (ss *StudentService) StudentExists(id string) bool {
+	student, err := ss.MysqlService.GetStudentFromMysql(id)
+	if err != nil {
+		log.Printf("查找学生：%s失败：%v", id, err)
+		return false
+	}
+	if student != nil {
+		return true
+	}
+	return false
+}
+
 // JoinRaftCluster 将节点加入 Raft 集群
 func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
 	//如果自己是领导者节点就处理 无所谓 加入集群时领导者节点就是第一个节点
@@ -157,10 +169,27 @@ func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *mo
 			return fmt.Errorf("StudentService.ApplyRaftCommandToLeader 获取领导者地址失败：%w", err)
 		}
 		url := fmt.Sprintf("http://localhost:%s/LeaderHandleCommand?cmd=%s", leaderPortAddr, cmdData)
-		_, err = http.Get(url)
+		resp, err := http.Get(url)
 		if err != nil {
 			log.Printf("将cmd命令：%s发送给领导者失败：%v", cmdData, err)
 			return fmt.Errorf("将cmd命令：%s发送给领导者失败：%v", cmdData, err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("读取响应体出错：%v", err)
+			return err
+		}
+		// 解析 JSON 响应
+		var result response.Result
+		err = json.Unmarshal(body, &result)
+		if err != nil {
+			fmt.Printf("解析 JSON 数据出错: %v\n", err)
+		}
+		//把错误信息返回给前端发送的对应端口
+		if result.Code != 1 {
+			return fmt.Errorf("领导者节点处理命令失败：%v", result.Message)
 		}
 		return nil
 	}
@@ -271,6 +300,12 @@ func (ss *StudentService) AddStudentInternal(student *model.Student) error {
 			log.Printf("事务已回滚：%v", r)
 		}
 	}()
+
+	//如果学生已经有其他节点添加到数据库和缓存了 那本节点只更新内存即可
+	if ss.StudentExists(student.ID) {
+		ss.MdbService.AddStudent(student)
+		return nil
+	}
 
 	// 在 MySQL 数据库事务中添加学生信息
 	if err := ss.MysqlService.AddStudentToMysql(tx, student); err != nil {
@@ -411,6 +446,7 @@ func (ss *StudentService) DeleteStudentInternal(id string) error {
 			log.Printf("事务已回滚：%v", r)
 		}
 	}()
+
 	if err := ss.CacheService.DeleteStudent(id); err != nil {
 		if !ss.StudentNotFoundErr(err) {
 			tx.Rollback()
