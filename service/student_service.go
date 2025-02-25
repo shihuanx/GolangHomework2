@@ -81,7 +81,7 @@ func (ss *StudentService) StudentExists(id string) bool {
 
 // JoinRaftCluster 将节点加入 Raft 集群
 func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
-	//如果自己是领导者节点就处理 无所谓 加入集群时领导者节点就是第一个节点
+	//如果自己是领导者节点就处理 无所谓 加入集群时领导者节点就是第一个节点 Http命令会发送给他
 	if ss.raftNode.State() == raftfpk.Leader {
 		future := ss.raftNode.AddVoter(raftfpk.ServerID(nodeID), raftfpk.ServerAddress(nodeAddress), 0, 0)
 		if err := future.Error(); err != nil {
@@ -131,7 +131,7 @@ func (ss *StudentService) GetLeaderAddr() (string, error) {
 		}
 		return "", fmt.Errorf("领导者地址 类型断言失败")
 	}
-	return "", fmt.Errorf("不可到达的代码")
+	return "", fmt.Errorf("获取领导者地址失败")
 }
 
 // ApplyRaftCommandToLeader 将命令提交给领导者处理

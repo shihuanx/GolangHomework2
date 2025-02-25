@@ -113,6 +113,6 @@ func (sc *StudentController) LeaderHandleCommand(c *gin.Context) {
 func (sc *StudentController) GetLeaderAddress(c *gin.Context) {
 	leaderAddr := sc.studentService.HandleGetLeaderAddressRequest()
 	if leaderAddr != "" {
-		c.JSON(200, response.Success(leaderAddr))
+		c.JSON(http.StatusOK, response.Success(leaderAddr))
 	}
 }

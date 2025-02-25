@@ -12,10 +12,11 @@ type Student struct {
 
 // StudentDB 关联mysql的学生表
 type StudentDB struct {
-	ID     string `json:"id" validate:"required" gorm:"primaryKey"`
-	Name   string `json:"name" validate:"required"`
-	Gender string `json:"gender" validate:"required"`
-	Class  string `json:"class" validate:"required"`
+	ID         string `json:"id" validate:"required" gorm:"primaryKey"`
+	Name       string `json:"name" validate:"required"`
+	Gender     string `json:"gender" validate:"required"`
+	Class      string `json:"class" validate:"required"`
+	Expiration int64  `json:"expiration"`
 }
 
 // Grade 关联mysql的成绩表

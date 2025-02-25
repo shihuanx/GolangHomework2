@@ -34,11 +34,12 @@ func (sms *StudentMysqlService) ConvertToStudent(studentDB *model.StudentDB) (*m
 		grades[v.Subject] = v.Score
 	}
 	return &model.Student{
-		ID:     studentDB.ID,
-		Name:   studentDB.Name,
-		Gender: studentDB.Gender,
-		Class:  studentDB.Class,
-		Grades: grades,
+		ID:         studentDB.ID,
+		Name:       studentDB.Name,
+		Gender:     studentDB.Gender,
+		Class:      studentDB.Class,
+		Grades:     grades,
+		Expiration: studentDB.Expiration,
 	}, nil
 }
 
