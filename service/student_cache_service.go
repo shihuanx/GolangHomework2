@@ -3,8 +3,8 @@ package service
 import (
 	"fmt"
 	"log"
-	"memoryDataBase/dao"
-	"memoryDataBase/model"
+	"node2/dao"
+	"node2/model"
 	"strings"
 )
 

@@ -1,8 +1,8 @@
 package interfaces
 
 import (
-	"memoryDataBase/config"
-	"memoryDataBase/model"
+	"node2/config"
+	"node2/model"
 )
 
 // StudentServiceInterface 定义学生服务接口 解决fsm依赖service service依赖fsm导致的循环导入问题。。。

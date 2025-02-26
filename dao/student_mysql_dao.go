@@ -3,7 +3,7 @@ package dao
 import (
 	"fmt"
 	"gorm.io/gorm"
-	"memoryDataBase/model"
+	"node2/model"
 )
 
 // StudentMysqlDao 定义MysqlDao层结构体实例

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/redis/go-redis/v9"
-	"memoryDataBase/model"
+	"node2/model"
 	"strconv"
 )
 

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"github.com/hashicorp/raft"
 	"log"
-	"memoryDataBase/config"
-	"memoryDataBase/interfaces"
 	"net/http"
+	"node2/config"
+	"node2/interfaces"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,7 +17,7 @@ import (
 var snapshotDirMutex sync.Mutex
 
 // NewRaftNode 创建并启动 Raft 节点
-func NewRaftNode(node config.Node, peers []*config.Peer, fsm raft.FSM,service interfaces.StudentServiceInterface) (*raft.Raft, error) {
+func NewRaftNode(node config.Node, peers []*config.Peer, fsm raft.FSM, service interfaces.StudentServiceInterface) (*raft.Raft, error) {
 	log.Printf("开始创建 Raft 节点: NodeID=%s, Address=%s", node.NodeId, node.Address)
 
 	// 配置 Raft
@@ -87,7 +87,7 @@ func NewRaftNode(node config.Node, peers []*config.Peer, fsm raft.FSM,service in
 			return nil, fmt.Errorf("节点：%s获取leader地址失败：%w", node.NodeId, err)
 		}
 
-		url := fmt.Sprintf("http://localhost:%s/JoinRaftCluster?nodeID=%s&nodeAddress=%s&portAddress=%s", leaderPortAddr, node.Address, node.Address,node.PortAddress)
+		url := fmt.Sprintf("http://localhost:%s/JoinRaftCluster?nodeID=%s&nodeAddress=%s&portAddress=%s", leaderPortAddr, node.Address, node.Address, node.PortAddress)
 		_, err = http.Get(url)
 		if err != nil {
 			log.Printf("节点：%s加入集群失败：%v", node.NodeId, err)

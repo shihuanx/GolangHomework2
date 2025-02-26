@@ -1,4 +1,4 @@
-module memoryDataBase
+module node2
 
 go 1.23
 

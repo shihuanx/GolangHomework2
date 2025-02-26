@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"github.com/hashicorp/raft"
 	"io"
-	"memoryDataBase/config"
-	"memoryDataBase/interfaces"
-	"memoryDataBase/model"
+	"node2/config"
+	"node2/interfaces"
+	"node2/model"
 )
 
 // StudentCommand 定义 Node 日志条目的结构
@@ -16,7 +16,7 @@ type StudentCommand struct {
 	Student     *model.Student `json:"student,omitempty"`
 	Id          string         `json:"id"`
 	ExamineSize int            `json:"examine_size"`
-	Peer 		*config.Peer
+	Peer        *config.Peer
 }
 
 // StudentFSM 实现 raft.FSM 接口

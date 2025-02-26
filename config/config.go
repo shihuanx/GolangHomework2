@@ -86,12 +86,10 @@ func GetConfig() Config {
 			ExamineSize:            10,
 		},
 		Node: Node{
-			NodeId:      "节点2",
-			Address:     "127.0.0.1:8081",
-			PortAddress: "8081",
+			NodeId:      "节点1",
+			Address:     "127.0.0.1:8080",
+			PortAddress: "8080",
 		},
-		Peers: []*Peer{
-			{NodeId: "节点1", Address: "127.0.0.1:8080", PortAddress: "8080"},
-		},
+		Peers: []*Peer{},
 	}
 }

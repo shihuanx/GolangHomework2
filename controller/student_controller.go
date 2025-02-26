@@ -3,10 +3,10 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 	"log"
-	"memoryDataBase/model"
-	"memoryDataBase/response"
-	"memoryDataBase/service"
 	"net/http"
+	"node2/model"
+	"node2/response"
+	"node2/service"
 )
 
 // StudentController 定义控制层结构体实例
@@ -88,8 +88,8 @@ func (sc *StudentController) DeleteStudent(c *gin.Context) {
 func (sc *StudentController) JoinRaftCluster(c *gin.Context) {
 	nodeID := c.Query("nodeID")
 	nodeAddress := c.Query("nodeAddress")
-	nodePortAddress:=c.Query("portAddress")
-	if err := sc.studentService.JoinRaftCluster(nodeID, nodeAddress,nodePortAddress); err != nil {
+	nodePortAddress := c.Query("portAddress")
+	if err := sc.studentService.JoinRaftCluster(nodeID, nodeAddress, nodePortAddress); err != nil {
 		log.Printf("StudentController.JoinRaftCluster err:%v", err)
 		c.JSON(500, response.Error(err.Error()))
 	} else {

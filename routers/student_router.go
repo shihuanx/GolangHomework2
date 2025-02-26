@@ -2,7 +2,7 @@ package routers
 
 import (
 	"github.com/gin-gonic/gin"
-	"memoryDataBase/controller"
+	"node2/controller"
 )
 
 func SetUpStudentRouter(studentController *controller.StudentController) *gin.Engine {
