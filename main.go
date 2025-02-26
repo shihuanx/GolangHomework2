@@ -9,13 +9,14 @@ import (
 	"memoryDataBase/database"
 	"memoryDataBase/routers"
 	"memoryDataBase/service"
-	"sync"
 )
 
-func startNode(node config.SingleNode, cfg config.Config, index int) {
+func main() {
 	// 初始化数据库和缓存
+	cfg := config.GetConfig()
+
 	if err := database.InitDB(cfg.MySQL.DSN); err != nil {
-		log.Fatalf("节点：%s 初始化数据库失败: %v", node.NodeId, err)
+		log.Fatalf("节点：%s 初始化数据库失败: %v", cfg.Node.NodeId, err)
 	}
 	cache.InitRedis(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 
@@ -28,9 +29,9 @@ func startNode(node config.SingleNode, cfg config.Config, index int) {
 	studentCacheService := service.NewStudentCacheService(studentCacheDao)
 	studentMysqlService := service.NewStudentMysqlService(studentMysqlDao)
 	studentMdbService := service.NewStudentMdbService(memoryDBDao)
-	studentService, err := service.NewStudentService(studentMdbService, studentMysqlService, studentCacheService, node, cfg, index)
+	studentService, err := service.NewStudentService(studentMdbService, studentMysqlService, studentCacheService, cfg.Node, cfg.Peers)
 	if err != nil {
-		log.Fatalf("节点：%s 初始化学生服务层失败：%v", node.NodeId, err)
+		log.Fatalf("节点：%s 初始化学生服务层失败：%v", cfg.Node.NodeId, err)
 	}
 
 	// 初始化控制器
@@ -38,46 +39,35 @@ func startNode(node config.SingleNode, cfg config.Config, index int) {
 
 	//启动时加载缓存数据到内存
 	if err = studentService.LoadCacheToMemory(cfg.MemoryDB.Capacity, cfg.CachePreheating.LoadRatio); err != nil {
-		log.Printf("节点：%s 加载缓存到内存时失败：%v", node.NodeId, err)
+		log.Printf("节点：%s 加载缓存到内存时失败：%v", cfg.Node.NodeId, err)
 		if err = studentService.LoadDateBaseToMemory(cfg.MemoryDB.Capacity, cfg.CachePreheating.LoadRatio); err != nil {
-			log.Printf("节点：%s 加载数据库中的数据到内存时失败：%v", node.NodeId, err)
+			log.Printf("节点：%s 加载数据库中的数据到内存时失败：%v", cfg.Node.NodeId, err)
 		}
-		log.Printf("节点：%s 加载数据库到内存", node.NodeId)
+		log.Printf("节点：%s 加载数据库到内存", cfg.Node.NodeId)
 	}
-	log.Printf("节点：%s 加载缓存到内存", node.NodeId)
+	log.Printf("节点：%s 加载缓存到内存", cfg.Node.NodeId)
 
-	//定期清空缓存 定期清除内存中的过期键 随便取一个节点向领导者节点提交命令即可
-	//解释一下为什么不在每个协程都开启这两个协程：可能导致数据不同步 因为每个节点协程的开启时间不一样 所以这两个协程的计时开启时间也不一样
-	if node.NodeId == "节点2" {
+	//定期清空缓存 定期清除内存中的过期键 让领导者节点提交命令给所有节点
+	leaderPortAddr, err := studentService.GetLeaderPortAddr()
+	if err != nil {
+		log.Fatalf("节点：%s 获取领导者端口地址失败：%v", cfg.Node.NodeId, err)
+	}
 		go func() {
-			studentService.ReLoadCacheData(cfg.Server.ReloadInterval)
+			if cfg.Node.PortAddress == leaderPortAddr{
+				studentService.ReLoadCacheData(cfg.Server.ReloadInterval)
+			}
 		}()
 
 		//定期删除内存数据库过期键
 		go func() {
-			studentService.PeriodicDelete(cfg.Server.PeriodicDeleteInterval, cfg.Server.ExamineSize)
+			if cfg.Node.PortAddress == leaderPortAddr{
+				studentService.PeriodicDelete(cfg.Server.PeriodicDeleteInterval, cfg.Server.ExamineSize)
+			}
 		}()
-	}
 	//初始化路由
 	studentRouter := routers.SetUpStudentRouter(studentController)
-	serverAddress := ":" + node.PortAddress
+	serverAddress := ":" + cfg.Node.PortAddress
 	if err = studentRouter.Run(serverAddress); err != nil {
-		log.Fatalf("节点：%s 初始化学生路由时出错：%v", node.NodeId, err)
+		log.Fatalf("节点：%s 初始化学生路由时出错：%v", cfg.Node.NodeId, err)
 	}
-}
-
-func main() {
-	//加载配置信息
-	cfg := config.GetConfig()
-
-	var wg sync.WaitGroup
-	for index, node := range cfg.Node.Nodes {
-		wg.Add(1)
-		go func(n config.SingleNode) {
-			defer wg.Done()
-			startNode(n, cfg, index)
-		}(node)
-	}
-
-	wg.Wait()
 }

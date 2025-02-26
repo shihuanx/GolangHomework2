@@ -1,6 +1,7 @@
 package interfaces
 
 import (
+	"memoryDataBase/config"
 	"memoryDataBase/model"
 )
 
@@ -11,4 +12,6 @@ type StudentServiceInterface interface {
 	DeleteStudentInternal(id string) error
 	ReLoadCacheDataInternal()
 	PeriodicDeleteInternal(examineSize int)
+	GetLeaderPortAddr() (string, error)
+	UpdatePeersInternal(peer *config.Peer)
 }

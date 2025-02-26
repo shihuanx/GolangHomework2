@@ -23,12 +23,12 @@ type StudentService struct {
 	MysqlService *StudentMysqlService
 	CacheService *StudentCacheService
 	raftNode     *raftfpk.Raft
-	node         config.SingleNode
-	nodes        []config.SingleNode
+	node         config.Node
+	peers        []*config.Peer
 }
 
 // NewStudentService 创建并初始化 StudentService 实例
-func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysqlService, cacheService *StudentCacheService, node config.SingleNode, cfg config.Config, nodeIndex int) (*StudentService, error) {
+func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysqlService, cacheService *StudentCacheService, node config.Node, peers []*config.Peer) (*StudentService, error) {
 
 	ss := &StudentService{
 		MdbService:   mdbService,
@@ -36,21 +36,12 @@ func NewStudentService(mdbService *StudentMdbService, mysqlService *StudentMysql
 		CacheService: cacheService,
 		raftNode:     new(raftfpk.Raft),
 		node:         node,
-		nodes:        cfg.Node.Nodes,
+		peers:        peers,
 	}
 
 	initializer := &raft.RaftInitializerImpl{}
 
-	// 构建 peers 列表 这里指定了项目刚启动的时候领导者节点肯定是下标最小的那个 这样其他节点申请加入集群时领导者节点的地址就确定了 省事
-	//但开启项目后后续领导者节点可能会变动 所以后续的一些需要领导者节点地址的操作就要动态获取了
-	peers := make([]string, 0)
-	for peerIndex, peer := range cfg.Node.Nodes {
-		if peerIndex < nodeIndex {
-			peers = append(peers, peer.Address)
-		}
-	}
-
-	raftNode, err := initializer.InitRaft(node.NodeId, node.Address, peers, ss)
+	raftNode, err := initializer.InitRaft(node, peers, ss)
 	if err != nil {
 		return nil, fmt.Errorf("初始化 Raft 节点 %s 时出错: %w", node.NodeId, err)
 	}
@@ -80,21 +71,38 @@ func (ss *StudentService) StudentExists(id string) bool {
 }
 
 // JoinRaftCluster 将节点加入 Raft 集群
-func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string) error {
-	//如果自己是领导者节点就处理 无所谓 加入集群时领导者节点就是第一个节点 Http命令会发送给他
+func (ss *StudentService) JoinRaftCluster(nodeID string, nodeAddress string,nodePortAddress string) error {
+	//再次确保是领导者节点才会处理加入集群的请求
 	if ss.raftNode.State() == raftfpk.Leader {
 		future := ss.raftNode.AddVoter(raftfpk.ServerID(nodeID), raftfpk.ServerAddress(nodeAddress), 0, 0)
 		if err := future.Error(); err != nil {
 			return err
 		}
 		log.Printf("领导者节点已将节点：%s加入集群", nodeID)
+
+		var newPeer *config.Peer
+		newPeer.NodeId=nodeID
+		newPeer.Address=nodeAddress
+		newPeer.PortAddress=nodePortAddress
+
+		err := ss.ApplyRaftCommandToLeader("updatePeers",nil,"",0,newPeer)
+		if err != nil {
+			log.Printf("领导者节点更新所有节点的Peers失败：%v", err)
+			return err
+		}
+
 		return nil
 	}
 	return nil
 }
 
-// HandleGetLeaderAddressRequest 处理获取领导者地址的请求 返回领导者的端口号
-func (ss *StudentService) HandleGetLeaderAddressRequest() string {
+func (ss *StudentService)UpdatePeersInternal(peer *config.Peer){
+	ss.peers=append(ss.peers,peer)
+	return
+}
+
+// HandleGetLeaderPortAddressRequest 处理获取领导者地址的请求 返回领导者的端口号
+func (ss *StudentService) HandleGetLeaderPortAddressRequest() string {
 	if ss.raftNode.State() == raftfpk.Leader {
 		log.Printf("节点：%s是领导者节点", ss.node.NodeId)
 		return ss.node.PortAddress
@@ -102,9 +110,9 @@ func (ss *StudentService) HandleGetLeaderAddressRequest() string {
 	return ""
 }
 
-// GetLeaderAddr 获取领导者地址 向所有节点都发送一个http请求 如果他是领导者节点 他就会把自己的端口号返回过来
-func (ss *StudentService) GetLeaderAddr() (string, error) {
-	for _, node := range ss.nodes {
+// GetLeaderPortAddr 获取领导者端口地址 向集群的各个节点都发送一个http请求 如果他是领导者节点 他就会把自己的端口号返回过来
+func (ss *StudentService) GetLeaderPortAddr() (string, error) {
+	for _, node := range ss.peers {
 		url := fmt.Sprintf("http://localhost:%s/GetLeaderAddress", node.PortAddress)
 		resp, err := http.Get(url)
 		if err != nil {
@@ -135,13 +143,14 @@ func (ss *StudentService) GetLeaderAddr() (string, error) {
 }
 
 // ApplyRaftCommandToLeader 将命令提交给领导者处理
-func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *model.Student, id string, examineSize int) error {
+func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *model.Student, id string, examineSize int,peer *config.Peer) error {
 	// 创建 Node 命令
 	cmd := fsm.StudentCommand{
 		Operation:   operation,
 		Student:     student,
 		Id:          id,
 		ExamineSize: examineSize,
+		Peer  		:peer,
 	}
 	// 序列化命令
 	cmdData, err := json.Marshal(cmd)
@@ -164,7 +173,7 @@ func (ss *StudentService) ApplyRaftCommandToLeader(operation string, student *mo
 		return nil
 	} else {
 		//如果不是 那就找到领导者节点的端口 把命令交给领导者节点处理
-		leaderPortAddr, err := ss.GetLeaderAddr()
+		leaderPortAddr, err := ss.GetLeaderPortAddr()
 		if err != nil {
 			return fmt.Errorf("StudentService.ApplyRaftCommandToLeader 获取领导者地址失败：%w", err)
 		}
@@ -485,7 +494,7 @@ func (ss *StudentService) ReLoadCacheData(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			err := ss.ApplyRaftCommandToLeader("reloadCacheData", nil, "", 0)
+			err := ss.ApplyRaftCommandToLeader("reloadCacheData", nil, "", 0,nil)
 			if err != nil {
 				log.Printf("StudentService.ReLoadCacheData 分布式加载缓存数据失败: %v，跳过这次操作", err)
 				continue
@@ -502,7 +511,7 @@ func (ss *StudentService) PeriodicDelete(interval time.Duration, examineSize int
 	for {
 		select {
 		case <-ticker.C:
-			err := ss.ApplyRaftCommandToLeader("periodicDelete", nil, "", examineSize)
+			err := ss.ApplyRaftCommandToLeader("periodicDelete", nil, "", examineSize,nil)
 			if err != nil {
 				log.Printf("StudentService.PeriodicDelete 分布式删除内存数据库过期键失败：: %v，跳过这次操作", err)
 				continue
@@ -513,15 +522,15 @@ func (ss *StudentService) PeriodicDelete(interval time.Duration, examineSize int
 
 // AddStudent 接收添加学生命令 提交给Raft节点
 func (ss *StudentService) AddStudent(student *model.Student) error {
-	return ss.ApplyRaftCommandToLeader("add", student, "", 0)
+	return ss.ApplyRaftCommandToLeader("add", student, "", 0,nil)
 }
 
 // UpdateStudent 接收更新学生命令 提交给Raft节点
 func (ss *StudentService) UpdateStudent(student *model.Student) error {
-	return ss.ApplyRaftCommandToLeader("update", student, "", 0)
+	return ss.ApplyRaftCommandToLeader("update", student, "", 0,nil)
 }
 
 // DeleteStudent 接收删除学生命令 提交给Raft节点
 func (ss *StudentService) DeleteStudent(id string) error {
-	return ss.ApplyRaftCommandToLeader("delete", nil, id, 0)
+	return ss.ApplyRaftCommandToLeader("delete", nil, id, 0,nil)
 }

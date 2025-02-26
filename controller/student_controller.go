@@ -88,7 +88,8 @@ func (sc *StudentController) DeleteStudent(c *gin.Context) {
 func (sc *StudentController) JoinRaftCluster(c *gin.Context) {
 	nodeID := c.Query("nodeID")
 	nodeAddress := c.Query("nodeAddress")
-	if err := sc.studentService.JoinRaftCluster(nodeID, nodeAddress); err != nil {
+	nodePortAddress:=c.Query("portAddress")
+	if err := sc.studentService.JoinRaftCluster(nodeID, nodeAddress,nodePortAddress); err != nil {
 		log.Printf("StudentController.JoinRaftCluster err:%v", err)
 		c.JSON(500, response.Error(err.Error()))
 	} else {
@@ -109,9 +110,9 @@ func (sc *StudentController) LeaderHandleCommand(c *gin.Context) {
 	}
 }
 
-// GetLeaderAddress 获取领导者端口的地址 方法是向所有节点都通过此端口发送请求 领导者端口会返回自己的端口地址
-func (sc *StudentController) GetLeaderAddress(c *gin.Context) {
-	leaderAddr := sc.studentService.HandleGetLeaderAddressRequest()
+// GetLeaderPortAddress 获取领导者端口的地址 方法是向所有节点都通过此端口发送请求 领导者端口会返回自己的端口地址
+func (sc *StudentController) GetLeaderPortAddress(c *gin.Context) {
+	leaderAddr := sc.studentService.HandleGetLeaderPortAddressRequest()
 	if leaderAddr != "" {
 		c.JSON(http.StatusOK, response.Success(leaderAddr))
 	}
